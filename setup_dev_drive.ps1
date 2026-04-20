@@ -40,13 +40,17 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # Suppress progress bars
 
 # Self-elevate to admin if needed (before Set-StrictMode to avoid property access issues via iex)
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+$script:isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+$script:invokedFromFile = $false
+$script:scriptPath = try { $MyInvocation.MyCommand.Path } catch { $null }
+if ($script:scriptPath) { $script:invokedFromFile = $true }
+
+if (-not $script:isAdmin) {
     Write-Output "Administrator privileges required. Requesting elevation..."
 
-    $scriptPath = try { $MyInvocation.MyCommand.Path } catch { $null }
-    if ($scriptPath) {
+    if ($script:invokedFromFile) {
         # Running from a file on disk - re-run with a flag so the elevated window pauses
-        $argList = "-NoProfile -ExecutionPolicy Bypass -Command `"& { `$env:SETUP_DEV_DRIVE_ELEVATED = '1'; & '$scriptPath' }`""
+        $argList = "-NoProfile -ExecutionPolicy Bypass -Command `"& { `$env:SETUP_DEV_DRIVE_ELEVATED = '1'; & '$script:scriptPath' }`""
     } else {
         # Running via iex/piped input - save to temp file for elevation
         $tempScript = Join-Path $env:TEMP "setup_dev_drive.ps1"
@@ -54,18 +58,21 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
             $MyInvocation.MyCommand.ScriptBlock.ToString() | Set-Content -Path $tempScript -Encoding UTF8
         } catch {
             Write-Error "Failed to extract script for elevation. Please run this script as administrator."
-            exit 1314
+            # Do not call exit - that would kill the user's shell when running via iex
+            return
         }
         $argList = "-NoProfile -ExecutionPolicy Bypass -Command `"& { `$env:SETUP_DEV_DRIVE_ELEVATED = '1'; & '$tempScript' }`""
     }
 
     try {
-        $process = Start-Process powershell -Verb RunAs -ArgumentList $argList -Wait -PassThru
-        exit $process.ExitCode
+        Start-Process powershell -Verb RunAs -ArgumentList $argList | Out-Null
     } catch {
         Write-Error "Failed to elevate to administrator. Please run this script as administrator."
-        exit 1314  # ERROR_PRIVILEGE_NOT_HELD
     }
+
+    # The elevated process handles the work in its own window.
+    # Do NOT call exit - when running via iex, that would kill the user's shell.
+    return
 }
 
 Set-StrictMode -Version Latest
@@ -615,6 +622,7 @@ function Main {
 }
 
 # Execute main function
+$script:exitCode = 0
 try {
     Main
 } catch {
@@ -628,4 +636,4 @@ try {
     }
 }
 
-if ($script:exitCode) { exit $script:exitCode }
+if ($script:exitCode -ne 0) { exit $script:exitCode }
