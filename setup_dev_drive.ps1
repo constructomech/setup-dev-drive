@@ -603,10 +603,17 @@ function Main {
 }
 
 # Execute main function
-Main
-
-# If we self-elevated into a new window, pause so the user can see the output
-if ($env:SETUP_DEV_DRIVE_ELEVATED -eq '1') {
-    Write-Output ""
-    Read-Host "Press Enter to close this window"
+try {
+    Main
+} catch {
+    Write-Error $_
+    $script:exitCode = 1
+} finally {
+    # If we self-elevated into a new window, pause so the user can see the output
+    if ($env:SETUP_DEV_DRIVE_ELEVATED -eq '1') {
+        Write-Output ""
+        Read-Host "Press Enter to close this window"
+    }
 }
+
+if ($script:exitCode) { exit $script:exitCode }
