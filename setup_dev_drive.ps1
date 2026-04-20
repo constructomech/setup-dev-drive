@@ -270,7 +270,14 @@ function Get-ViableDevDriveOptions {
     $osDiskNumber = $osPartition.DiskNumber
     $options = @()
 
+    # Only allow OS disk as a candidate when it is the only disk in the machine.
+    # On multi-disk machines, we intentionally skip the OS disk so secondary drives
+    # that happen to be below the minimum size don't force us onto the OS disk.
+    $allDisks = @(Get-Disk)
+    $allowOsDisk = ($allDisks.Count -eq 1)
+
     Write-Debug "OS disk number: $osDiskNumber"
+    Write-Debug "Total disks: $($allDisks.Count), Allow OS disk: $allowOsDisk"
     Write-Debug "Required size: $(Format-SizeInGB $MINIMUM_DEV_DRIVE_SIZE)"
 
     $fixedVolumes = @(Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.DriveLetter })
@@ -279,7 +286,7 @@ function Get-ViableDevDriveOptions {
     foreach ($volume in $fixedVolumes) {
         $partition = Get-Partition -DriveLetter $volume.DriveLetter
 
-        if ($partition.DiskNumber -eq $osDiskNumber) {
+        if ($partition.DiskNumber -eq $osDiskNumber -and -not $allowOsDisk) {
             Write-Debug "Skipping volume $($volume.DriveLetter): - on OS disk"
             continue
         }
@@ -357,10 +364,15 @@ function Get-ViableDevDriveOptions {
     }
 
     # Priority 2: Unallocated space (can be used without prompting)
-    $nonOsDisks = @(Get-Disk | Where-Object { $_.Number -ne $osDiskNumber })
-    Write-Debug "Found $($nonOsDisks.Count) non-OS disks to evaluate"
+    # When OS disk is the only disk, it is also considered here.
+    if ($allowOsDisk) {
+        $candidateDisks = $allDisks
+    } else {
+        $candidateDisks = @($allDisks | Where-Object { $_.Number -ne $osDiskNumber })
+    }
+    Write-Debug "Found $($candidateDisks.Count) candidate disks to evaluate for unallocated space"
 
-    foreach ($disk in $nonOsDisks) {
+    foreach ($disk in $candidateDisks) {
         if ($disk.PartitionStyle -eq 'RAW') {
             $availableSize = $disk.Size
         } else {
