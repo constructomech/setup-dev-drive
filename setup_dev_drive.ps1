@@ -45,8 +45,8 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
     $scriptPath = try { $MyInvocation.MyCommand.Path } catch { $null }
     if ($scriptPath) {
-        # Running from a file on disk
-        $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
+        # Running from a file on disk - re-run with a flag so the elevated window pauses
+        $argList = "-NoProfile -ExecutionPolicy Bypass -Command `"& { `$env:SETUP_DEV_DRIVE_ELEVATED = '1'; & '$scriptPath' }`""
     } else {
         # Running via iex/piped input - save to temp file for elevation
         $tempScript = Join-Path $env:TEMP "setup_dev_drive.ps1"
@@ -56,7 +56,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
             Write-Error "Failed to extract script for elevation. Please run this script as administrator."
             exit 1314
         }
-        $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`""
+        $argList = "-NoProfile -ExecutionPolicy Bypass -Command `"& { `$env:SETUP_DEV_DRIVE_ELEVATED = '1'; & '$tempScript' }`""
     }
 
     try {
@@ -604,3 +604,9 @@ function Main {
 
 # Execute main function
 Main
+
+# If we self-elevated into a new window, pause so the user can see the output
+if ($env:SETUP_DEV_DRIVE_ELEVATED -eq '1') {
+    Write-Output ""
+    Read-Host "Press Enter to close this window"
+}
