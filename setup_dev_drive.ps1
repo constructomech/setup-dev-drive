@@ -36,21 +36,26 @@
 [CmdletBinding()]
 param()
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # Suppress progress bars
 
-# Self-elevate to admin if needed
+# Self-elevate to admin if needed (before Set-StrictMode to avoid property access issues via iex)
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
     Write-Output "Administrator privileges required. Requesting elevation..."
 
-    if ($MyInvocation.MyCommand -is [System.Management.Automation.ExternalScriptInfo]) {
+    $scriptPath = try { $MyInvocation.MyCommand.Path } catch { $null }
+    if ($scriptPath) {
         # Running from a file on disk
         $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
     } else {
         # Running via iex/piped input - save to temp file for elevation
         $tempScript = Join-Path $env:TEMP "setup_dev_drive.ps1"
-        $MyInvocation.MyCommand.ScriptBlock.ToString() | Set-Content -Path $tempScript -Encoding UTF8
+        try {
+            $MyInvocation.MyCommand.ScriptBlock.ToString() | Set-Content -Path $tempScript -Encoding UTF8
+        } catch {
+            Write-Error "Failed to extract script for elevation. Please run this script as administrator."
+            exit 1314
+        }
         $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`""
     }
 
@@ -63,6 +68,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     }
 }
 
+Set-StrictMode -Version Latest
 
 $MINIMUM_DEV_DRIVE_SIZE = 400GB
 
