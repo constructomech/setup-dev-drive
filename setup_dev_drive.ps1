@@ -497,10 +497,21 @@ function Invoke-ResizeAndCreateDevDrive {
 
     $disk = Get-Partition -DriveLetter $option.DriveLetter | Get-Disk
 
+    # Determine actual unallocated space freed by the shrink. Due to partition alignment and
+    # GPT reserved space, the freed region is typically a few MB smaller than requested, which
+    # makes creating a partition with an exact -Size fail. Using -UseMaximumSize consumes the
+    # actual freed region, but only do so when the freed space meets the minimum dev drive size.
+    $diskPartitions = @($disk | Get-Partition)
+    $usedOnDisk = ($diskPartitions | Measure-Object -Property Size -Sum).Sum
+    $freedSize = $disk.Size - $usedOnDisk
+
+    if ($freedSize -lt $MINIMUM_DEV_DRIVE_SIZE) {
+        throw "Shrink left only $(Format-SizeInGB $freedSize) free, which is below the $(Format-SizeInGB $MINIMUM_DEV_DRIVE_SIZE) minimum dev drive size."
+    }
+
     $driveLetter = GetAvailableDriveLetter
 
-    # Create partition with the requested size
-    New-Partition -DiskNumber $disk.Number -Size $requestedSize -DriveLetter $driveLetter
+    New-Partition -DiskNumber $disk.Number -UseMaximumSize -DriveLetter $driveLetter
     Format-Volume -DriveLetter $driveLetter -DevDrive -Confirm:$false
 
     Write-Output "Dev drive created successfully at ${driveLetter}:"
