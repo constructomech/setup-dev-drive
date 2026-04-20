@@ -44,17 +44,14 @@ $ProgressPreference = 'SilentlyContinue'  # Suppress progress bars
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
     Write-Output "Administrator privileges required. Requesting elevation..."
 
-    # Determine how to re-launch: if running from a file, re-run the file; if piped/iex, re-download
-    $scriptPath = $MyInvocation.MyCommand.Path
-    if ($scriptPath) {
+    if ($MyInvocation.MyCommand -is [System.Management.Automation.ExternalScriptInfo]) {
         # Running from a file on disk
-        $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+        $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
     } else {
-        # Running via iex/piped input - re-fetch and execute
-        # Reconstruct from the script body
-        $scriptBody = $MyInvocation.MyCommand.ScriptBlock.ToString()
-        $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($scriptBody))
-        $argList = "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedCommand"
+        # Running via iex/piped input - save to temp file for elevation
+        $tempScript = Join-Path $env:TEMP "setup_dev_drive.ps1"
+        $MyInvocation.MyCommand.ScriptBlock.ToString() | Set-Content -Path $tempScript -Encoding UTF8
+        $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`""
     }
 
     try {
